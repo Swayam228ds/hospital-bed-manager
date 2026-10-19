@@ -5,7 +5,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = ROOT / "data" / "hospital.db"
+DB_PATH = ROOT / "data" / "hospital.db"            # demo hospital (simulated clock, reset any time)
+LIVE_DB_PATH = ROOT / "data" / "my_hospital.db"    # your own hospital, set up by hand
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);

@@ -50,6 +50,16 @@ Open **http://localhost:5000**. The first run creates a demo hospital in `data/h
 | Bed board | Every bed by ward: free, freeing within a day, or occupied, with each patient's predicted discharge date and range. |
 | Model report | Each model's results against its baseline. |
 
+### Your own hospital
+
+**http://localhost:5000/hospital/** is a second, separate platform that starts empty, for a real hospital to set up by hand. It is stored in `data/my_hospital.db`, so the demo can be reset without touching it.
+
+1. **Setup** tab: enter the hospital's name and its typical new admissions per day (used by the forecast until 14 days of its own records exist), then add each ward with its number of beds. Beds can be added or removed later.
+2. **Bed board**: click a free bed to record a patient who is already admitted (with their admission date), admit someone from the waiting list, or remove the bed.
+3. **Waiting list** and **Emergency intake** work as in the demo.
+
+It runs on the real calendar date, so there is no *Next day* or *Reset demo*. *Erase this hospital* on the Setup tab wipes it and starts again.
+
 ## Train the models
 
 The trained triage model is already in `models/`, so the app works without retraining.

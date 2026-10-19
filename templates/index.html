@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hospital Bed Manager</title>
+<title>{% if live %}{{ hospital_name or "My Hospital" }} · Bed Manager{% else %}Hospital Bed Manager (demo){% endif %}</title>
 <script src="https://cdn.tailwindcss.com/3.4.3"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
@@ -18,17 +18,29 @@
 <header class="bg-white border-b border-slate-200">
   <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
     <div>
-      <h1 class="text-lg font-semibold">Hospital Bed Manager</h1>
+      {% if live %}
+      <h1 class="text-lg font-semibold"><span id="hospital-name">{{ hospital_name or "My Hospital" }}</span> <span class="text-sm font-normal text-slate-500">Bed Manager</span></h1>
+      {% else %}
+      <h1 class="text-lg font-semibold">Hospital Bed Manager <span class="text-xs font-normal bg-amber-100 text-amber-800 rounded px-1.5 py-0.5 align-middle">Demo</span></h1>
+      {% endif %}
       <p class="text-xs text-slate-500">Who needs a bed, who gets the next one, and when beds will free up. Decision support only; doctors decide.</p>
     </div>
     <div class="flex items-center gap-2 text-sm">
+      {% if live %}
+      <span class="text-slate-500">Today</span>
+      <strong id="today" class="num">&mdash;</strong>
+      <a href="/" class="border border-slate-300 hover:bg-slate-100 rounded px-3 py-1.5">Open demo</a>
+      {% else %}
       <span class="text-slate-500">Demo date</span>
       <strong id="today" class="num">&mdash;</strong>
       <button id="next-day" class="bg-teal-700 hover:bg-teal-800 text-white rounded px-3 py-1.5">Next day &rarr;</button>
       <button id="reset" class="border border-slate-300 hover:bg-slate-100 rounded px-3 py-1.5">Reset demo</button>
+      <a href="/hospital/" class="border border-teal-700 text-teal-700 hover:bg-teal-50 rounded px-3 py-1.5">My hospital &rarr;</a>
+      {% endif %}
     </div>
   </div>
   <nav class="max-w-7xl mx-auto px-4 flex gap-1 text-sm overflow-x-auto" role="tablist">
+    {% if live %}<button class="tab-btn border-b-2 border-transparent px-3 py-2" data-tab="setup" aria-selected="false">Setup</button>{% endif %}
     <button class="tab-btn border-b-2 border-transparent px-3 py-2" data-tab="overview" aria-selected="true">Overview</button>
     <button class="tab-btn border-b-2 border-transparent px-3 py-2" data-tab="queue" aria-selected="false">Waiting list</button>
     <button class="tab-btn border-b-2 border-transparent px-3 py-2" data-tab="intake" aria-selected="false">Emergency intake</button>
@@ -41,8 +53,47 @@
 
 <main class="max-w-7xl mx-auto px-4 py-6">
 
+{% if live %}
+<!-- ============ Setup (your own hospital) ============ -->
+<section id="tab-setup" class="hidden space-y-6">
+  <div id="setup-intro" class="hidden bg-teal-50 border border-teal-200 rounded-lg p-4 text-sm">
+    <strong>Welcome.</strong> This hospital is empty. 1) Give it a name, 2) add your wards and beds,
+    3) on the <em>Bed board</em>, click a free bed to record patients who are already admitted, and
+    4) put waiting patients on the <em>Waiting list</em>. Everything is saved in <code>data/my_hospital.db</code>, separate from the demo.
+  </div>
+  <form id="setup-form" class="bg-white rounded-lg border border-slate-200 p-5 grid sm:grid-cols-3 gap-3 text-sm">
+    <h2 class="font-semibold sm:col-span-3">Hospital</h2>
+    <label>Hospital name<input name="hospital_name" required class="mt-1 w-full border rounded px-2 py-1.5" placeholder="e.g. District Hospital, Cuttack"></label>
+    <label>Typical new admissions per day<input name="typical_daily_admissions" type="number" min="0" step="any" class="mt-1 w-full border rounded px-2 py-1.5"></label>
+    <div class="flex items-end"><button class="bg-teal-700 hover:bg-teal-800 text-white rounded px-4 py-1.5">Save</button></div>
+    <p class="sm:col-span-3 text-xs text-slate-500">The admissions-per-day figure drives the forecast until the platform has 14 days of your own records; after that it learns from what you enter.</p>
+  </form>
+  <div class="bg-white rounded-lg border border-slate-200 p-5 text-sm">
+    <h2 class="font-semibold mb-3">Wards and beds</h2>
+    <table class="w-full mb-4">
+      <thead class="text-left text-xs text-slate-500 border-b"><tr><th class="py-2 pr-3">Ward</th><th class="pr-3 text-right">Beds</th><th class="pr-3 text-right">Occupied</th><th class="pr-3">Add beds</th><th></th></tr></thead>
+      <tbody id="ward-rows"></tbody>
+    </table>
+    <form id="ward-form" class="grid sm:grid-cols-4 gap-3">
+      <input name="name" required placeholder="New ward name, e.g. General Medicine" class="border rounded px-2 py-1.5 sm:col-span-2">
+      <input name="beds" type="number" min="1" max="500" required placeholder="Number of beds" class="border rounded px-2 py-1.5">
+      <input name="prefix" placeholder="Bed label prefix (optional, e.g. GM)" class="border rounded px-2 py-1.5">
+      <button class="bg-teal-700 hover:bg-teal-800 text-white rounded px-4 py-1.5 justify-self-start">Add ward</button>
+    </form>
+  </div>
+  <div class="bg-white rounded-lg border border-red-200 p-5 text-sm">
+    <h2 class="font-semibold text-red-800">Start over</h2>
+    <p class="text-xs text-slate-500 mb-2">Erase every ward, bed and patient in this hospital. The demo is not affected.</p>
+    <button id="wipe" class="border border-red-300 text-red-700 hover:bg-red-50 rounded px-3 py-1.5">Erase this hospital</button>
+  </div>
+</section>
+{% endif %}
+
 <!-- ============ Overview ============ -->
 <section id="tab-overview" class="space-y-6">
+  <div id="empty-banner" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
+    This hospital has no beds yet. <button class="text-teal-700 underline" onclick="showTab('setup')">Go to Setup</button> to add your wards and beds.
+  </div>
   <div class="grid grid-cols-2 md:grid-cols-5 gap-3" id="tiles"></div>
   <div class="grid lg:grid-cols-3 gap-6">
     <div class="lg:col-span-2 bg-white rounded-lg border border-slate-200 p-5">
@@ -165,7 +216,9 @@
 </main>
 
 <script>
+const LIVE = {{ "true" if live else "false" }}, BASE = "{{ base }}";
 const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const fmtDate = s => new Date(s + "T00:00").toLocaleDateString(undefined, {day: "numeric", month: "short"});
 const pct = x => (x * 100).toFixed(0) + "%";
 const URG = {1: "Routine", 2: "Soon", 3: "Urgent"};
@@ -173,7 +226,7 @@ const URG_CLS = {1: "bg-slate-100 text-slate-700", 2: "bg-amber-100 text-amber-8
 let charts = {}, lastTriage = null;
 
 async function api(path, opts = {}) {
-  const r = await fetch(path, {headers: {"Content-Type": "application/json"}, ...opts});
+  const r = await fetch(BASE + path, {headers: {"Content-Type": "application/json"}, ...opts});
   const body = await r.json();
   if (!r.ok) throw new Error(body.error || r.statusText);
   return body;
@@ -182,14 +235,25 @@ function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.re
 function chart(id, cfg) { charts[id]?.destroy(); charts[id] = new Chart(document.getElementById(id), cfg); }
 
 // ---------- tabs ----------
-const loaders = {overview: loadOverview, queue: loadQueue, beds: loadBeds, report: loadReport, intake: () => {}};
+const loaders = {overview: loadOverview, queue: loadQueue, beds: loadBeds, report: loadReport, intake: () => {}, setup: () => loadSetup()};
 let current = "overview";
-document.querySelectorAll(".tab-btn").forEach(b => b.onclick = () => {
-  document.querySelectorAll(".tab-btn").forEach(x => x.setAttribute("aria-selected", x === b));
+function showTab(tab) {
+  document.querySelectorAll(".tab-btn").forEach(x => x.setAttribute("aria-selected", x.dataset.tab === tab));
   document.querySelectorAll("main > section").forEach(s => s.classList.add("hidden"));
-  current = b.dataset.tab; $("#tab-" + current).classList.remove("hidden"); loaders[current]();
-});
+  current = tab; $("#tab-" + current).classList.remove("hidden"); loaders[current]();
+}
+document.querySelectorAll(".tab-btn").forEach(b => b.onclick = () => showTab(b.dataset.tab));
 const refresh = () => loaders[current]();
+
+// Ward drop-downs follow the wards this hospital actually has.
+async function refreshWardSelects() {
+  const names = (await api("/api/wards")).map(w => w.name);
+  document.querySelectorAll('select[name="ward"]').forEach(sel => {
+    const keep = sel.value;
+    sel.innerHTML = names.length ? names.map(n => `<option>${esc(n)}</option>`).join("") : `<option value="">(no wards yet)</option>`;
+    if (names.includes(keep)) sel.value = keep;
+  });
+}
 
 // ---------- overview ----------
 function tile(label, value, sub, cls = "") {
@@ -199,6 +263,7 @@ function tile(label, value, sub, cls = "") {
 async function loadOverview() {
   const o = await api("/api/overview");
   $("#today").textContent = fmtDate(o.today);
+  $("#empty-banner").classList.toggle("hidden", !(LIVE && o.beds_total === 0));
   const gap = o.tomorrow.bed_gap;
   $("#tiles").innerHTML =
     tile("Beds occupied", `${o.beds_occupied}/${o.beds_total}`, `${o.beds_free} free now`) +
@@ -211,8 +276,9 @@ async function loadOverview() {
       {label: "Beds free (before admissions)", data: o.forecast.map(d => d.beds_free_before_admissions), backgroundColor: "#99f6e4"},
       {label: "Expected admissions", data: o.forecast.map(d => d.expected_admissions), type: "line", borderColor: "#b91c1c", backgroundColor: "#b91c1c"}]},
     options: {maintainAspectRatio: false, scales: {y: {beginAtZero: true, title: {display: true, text: "beds / patients"}}}}});
-  $("#ward-bars").innerHTML = o.by_ward.map(w => `<div><div class="flex justify-between"><span>${w.ward}</span><span class="num">${w.occupied}/${w.total}</span></div>
-    <div class="h-2 bg-slate-100 rounded mt-1"><div class="h-2 rounded ${w.occupied / w.total > 0.9 ? "bg-red-500" : "bg-teal-600"}" style="width:${100 * w.occupied / w.total}%"></div></div></div>`).join("");
+  $("#ward-bars").innerHTML = o.by_ward.map(w => `<div><div class="flex justify-between"><span>${esc(w.ward)}</span><span class="num">${w.occupied}/${w.total}</span></div>
+    <div class="h-2 bg-slate-100 rounded mt-1"><div class="h-2 rounded ${w.occupied / w.total > 0.9 ? "bg-red-500" : "bg-teal-600"}" style="width:${100 * w.occupied / w.total}%"></div></div></div>`).join("")
+    || `<p class="text-slate-500">No wards yet.</p>`;
 }
 
 // ---------- waiting list ----------
@@ -223,15 +289,20 @@ async function loadQueue() {
   for (const k of ["w_urgency", "w_wait", "w_prob", "wait_cap"]) $("#weights")[k].value = s[k];
   $("#queue-body").innerHTML = queue.map(p => `<tr class="border-b last:border-0">
     <td class="py-2 pr-3 num">${p.rank}</td>
-    <td class="pr-3"><div class="font-medium">${p.name}</div><div class="text-xs text-slate-500">${p.age ?? ""} ${p.gender ?? ""}</div></td>
-    <td class="pr-3">${p.condition ?? ""}</td><td class="pr-3">${p.ward ?? ""}</td>
+    <td class="pr-3"><div class="font-medium">${esc(p.name)}</div><div class="text-xs text-slate-500">${p.age ?? ""} ${p.gender ?? ""}</div></td>
+    <td class="pr-3">${esc(p.condition)}</td><td class="pr-3">${esc(p.ward)}</td>
     <td class="pr-3">${p.source === "emergency" ? "Emergency" : "Planned"}</td>
     <td class="pr-3"><select data-urg="${p.id}" class="text-xs rounded px-1 py-0.5 ${URG_CLS[p.urgency]}">${[1, 2, 3].map(u => `<option value="${u}" ${u === p.urgency ? "selected" : ""}>${URG[u]}</option>`).join("")}</select></td>
     <td class="pr-3 text-right num">${p.admit_prob == null ? "&ndash;" : pct(p.admit_prob)}</td>
     <td class="pr-3 text-right num">${p.days_waited}</td>
     <td class="pr-3 text-right num font-semibold">${p.priority}</td>
-    <td class="text-right"><button data-admit="${p.id}" class="text-teal-700 hover:underline">Admit</button></td></tr>`).join("")
+    <td class="text-right whitespace-nowrap"><button data-admit="${p.id}" class="text-teal-700 hover:underline">Admit</button>
+      <button data-remove="${p.id}" class="text-slate-400 hover:text-red-700 ml-2" title="Remove from the waiting list">✕</button></td></tr>`).join("")
     || `<tr><td colspan="10" class="py-6 text-center text-slate-500">Nobody is waiting.</td></tr>`;
+  document.querySelectorAll("[data-remove]").forEach(b => b.onclick = async () => {
+    if (!confirm("Remove this patient from the waiting list?")) return;
+    await api(`/api/queue/${b.dataset.remove}/remove`, {method: "POST", body: "{}"}); loadQueue();
+  });
   document.querySelectorAll("[data-admit]").forEach(b => b.onclick = async () => {
     try { const r = await api(`/api/queue/${b.dataset.admit}/admit`, {method: "POST", body: "{}"});
       toast(`Admitted. Expected stay ${r.los_p50} days (up to ${r.los_p90}).`); loadQueue();
@@ -294,19 +365,21 @@ async function loadBeds() {
   const wards = {};
   beds.forEach(b => (wards[b.ward] ??= []).push(b));
   $("#wards").innerHTML = Object.entries(wards).map(([w, list]) => `<div class="bg-white rounded-lg border border-slate-200 p-5">
-    <h2 class="font-semibold mb-3">${w} <span class="text-sm font-normal text-slate-500">${list.filter(b => b.patient).length}/${list.length} occupied</span></h2>
+    <h2 class="font-semibold mb-3">${esc(w)} <span class="text-sm font-normal text-slate-500">${list.filter(b => b.patient).length}/${list.length} occupied</span></h2>
     <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-10 gap-2">${list.map(b => {
       const cls = b.status === "free" ? "bg-emerald-50 border-emerald-300" : b.status === "freeing" ? "bg-amber-50 border-amber-400" : "bg-slate-50 border-slate-300";
       const p = b.patient;
       return `<button data-bed="${b.bed_id}" class="bed text-left border rounded p-2 text-xs ${cls} hover:shadow">
-        <div class="font-semibold">${b.label}</div>${p ? `<div class="truncate">${p.name}</div><div class="text-slate-500">${p.days_left < 0 ? "overdue" : "out ~" + fmtDate(p.expected_discharge)}</div>` : `<div class="text-emerald-700">Free</div>`}</button>`;
-    }).join("")}</div></div>`).join("");
+        <div class="font-semibold">${esc(b.label)}</div>${p ? `<div class="truncate">${esc(p.name)}</div><div class="text-slate-500">${p.days_left < 0 ? "overdue" : "out ~" + fmtDate(p.expected_discharge)}</div>` : `<div class="text-emerald-700">Free</div>`}</button>`;
+    }).join("")}</div></div>`).join("")
+    || `<div class="bg-white rounded-lg border border-slate-200 p-8 text-center text-sm text-slate-500">No beds yet.
+         ${LIVE ? `<button class="text-teal-700 underline" onclick="showTab('setup')">Add wards and beds in Setup</button>.` : ""}</div>`;
   document.querySelectorAll("[data-bed]").forEach(el => el.onclick = () => {
     const b = beds.find(x => x.bed_id === +el.dataset.bed);
-    if (!b.patient) return toast("This bed is free. Admit someone from the waiting list.");
+    if (!b.patient) return LIVE ? freeBedDialog(b) : toast("This bed is free. Admit someone from the waiting list.");
     const p = b.patient;
-    $("#bed-detail-body").innerHTML = `<div class="flex justify-between"><h3 class="font-semibold">${b.label} · ${p.name}</h3><button id="close-bed" class="text-slate-500">✕</button></div>
-      <p>${p.age} ${p.gender} · ${p.condition} · ${p.source === "emergency" ? "Emergency" : "Planned"} admission</p>
+    $("#bed-detail-body").innerHTML = `<div class="flex justify-between"><h3 class="font-semibold">${esc(b.label)} · ${esc(p.name)}</h3><button id="close-bed" class="text-slate-500">✕</button></div>
+      <p>${p.age ?? ""} ${p.gender ?? ""} · ${esc(p.condition)} · ${p.source === "emergency" ? "Emergency" : "Planned"} admission</p>
       <p>Admitted ${fmtDate(p.admitted_on)} (day ${p.days_in + 1})</p>
       <p><strong>Expected discharge ${fmtDate(p.expected_discharge)}</strong>, could be as late as ${fmtDate(p.latest_discharge)}</p>
       <p class="text-xs text-slate-500">Predicted stay ${p.los_p50} days (likely), ${p.los_p90} days (90% of similar patients leave by then).</p>
@@ -318,6 +391,87 @@ async function loadBeds() {
   });
 }
 $("#bed-detail").onclick = e => { if (e.target.id === "bed-detail") e.target.classList.add("hidden"); };
+
+// Your own hospital: fill a free bed from the waiting list, record a patient already in it, or remove the bed.
+async function freeBedDialog(b) {
+  const {queue} = await api("/api/queue");
+  const close = () => $("#bed-detail").classList.add("hidden");
+  const today = new Date().toISOString().slice(0, 10);
+  $("#bed-detail-body").innerHTML = `<div class="flex justify-between"><h3 class="font-semibold">${esc(b.label)} · ${esc(b.ward)} · Free</h3><button id="close-bed" class="text-slate-500">✕</button></div>
+    <div class="border-t pt-2"><h4 class="font-medium mb-1">Admit from the waiting list</h4>
+      ${queue.length ? `<div class="flex gap-2"><select id="fb-q" class="flex-1 border rounded px-2 py-1.5">${queue.map(p =>
+        `<option value="${p.id}">#${p.rank} ${esc(p.name)} (${esc(p.ward || "any ward")}, priority ${p.priority})</option>`).join("")}</select>
+        <button id="fb-admit" class="bg-teal-700 text-white rounded px-3 py-1.5">Admit</button></div>` : `<p class="text-slate-500">Nobody is waiting.</p>`}</div>
+    <form id="fb-form" class="border-t pt-2 grid grid-cols-2 gap-2"><h4 class="font-medium col-span-2">Record a patient already in this bed</h4>
+      <input name="name" required placeholder="Name" class="col-span-2 border rounded px-2 py-1.5">
+      <input name="age" type="number" min="0" max="120" placeholder="Age" class="border rounded px-2 py-1.5">
+      <select name="gender" class="border rounded px-2 py-1.5"><option>Male</option><option>Female</option></select>
+      <select name="source" class="border rounded px-2 py-1.5"><option value="emergency">Emergency admission</option><option value="opd">Planned admission</option></select>
+      <label class="text-xs text-slate-500">Admitted on<input name="admitted_on" type="date" max="${today}" value="${today}" required class="w-full border rounded px-2 py-1 text-sm text-slate-800"></label>
+      <input name="condition" placeholder="Reason for admission" class="col-span-2 border rounded px-2 py-1.5">
+      <button class="col-span-2 bg-teal-700 text-white rounded px-3 py-1.5 justify-self-start">Put in this bed</button></form>
+    <div class="border-t pt-2"><button id="fb-delete" class="text-red-700 hover:underline text-xs">Remove this bed from the ward</button></div>`;
+  $("#bed-detail").classList.remove("hidden");
+  $("#close-bed").onclick = close;
+  if ($("#fb-admit")) $("#fb-admit").onclick = async () => {
+    try { const r = await api(`/api/queue/${$("#fb-q").value}/admit`, {method: "POST", body: JSON.stringify({bed_id: b.bed_id})});
+      close(); toast(`Admitted to ${b.label}. Expected stay ${r.los_p50} days (up to ${r.los_p90}).`); loadBeds();
+    } catch (e) { toast(e.message); }
+  };
+  $("#fb-form").onsubmit = async e => { e.preventDefault();
+    const d = Object.fromEntries(new FormData(e.target)); d.age = d.age ? +d.age : null;
+    try { const r = await api(`/api/beds/${b.bed_id}/occupant`, {method: "POST", body: JSON.stringify(d)});
+      close(); toast(`Recorded. Expected stay ${r.los_p50} days (up to ${r.los_p90}).`); loadBeds();
+    } catch (err) { toast(err.message); }
+  };
+  $("#fb-delete").onclick = async () => {
+    if (!confirm(`Remove bed ${b.label}?`)) return;
+    try { await api(`/api/beds/${b.bed_id}`, {method: "DELETE"}); close(); toast("Bed removed."); loadBeds(); } catch (e) { toast(e.message); }
+  };
+}
+
+// ---------- setup (your own hospital) ----------
+async function loadSetup() {
+  if (!LIVE) return;
+  const s = await api("/api/setup");
+  const f = $("#setup-form");
+  f.hospital_name.value = s.hospital_name; f.typical_daily_admissions.value = s.typical_daily_admissions;
+  $("#setup-intro").classList.toggle("hidden", !!(s.hospital_name && s.wards.length));
+  $("#ward-rows").innerHTML = s.wards.map(w => `<tr class="border-b">
+    <td class="py-2 pr-3 font-medium">${esc(w.name)}</td><td class="pr-3 text-right num">${w.beds}</td><td class="pr-3 text-right num">${w.occupied}</td>
+    <td class="pr-3"><input type="number" min="1" max="500" value="1" data-n="${w.id}" class="w-16 border rounded px-1"> <button data-addbeds="${w.id}" class="text-teal-700 hover:underline">Add</button></td>
+    <td class="text-right"><button data-delward="${w.id}" class="text-red-700 hover:underline text-xs">Delete ward</button></td></tr>`).join("")
+    || `<tr><td colspan="5" class="py-4 text-center text-slate-500">No wards yet. Add your first ward below.</td></tr>`;
+  document.querySelectorAll("[data-addbeds]").forEach(b => b.onclick = async () => {
+    const n = +document.querySelector(`[data-n="${b.dataset.addbeds}"]`).value;
+    try { await api(`/api/wards/${b.dataset.addbeds}/beds`, {method: "POST", body: JSON.stringify({count: n})}); toast(`${n} bed(s) added.`); loadSetup(); }
+    catch (e) { toast(e.message); }
+  });
+  document.querySelectorAll("[data-delward]").forEach(b => b.onclick = async () => {
+    if (!confirm("Delete this ward and all its beds?")) return;
+    try { await api(`/api/wards/${b.dataset.delward}`, {method: "DELETE"}); toast("Ward deleted."); loadSetup(); refreshWardSelects(); }
+    catch (e) { toast(e.message); }
+  });
+}
+if (LIVE) {
+  $("#setup-form").onsubmit = async e => { e.preventDefault();
+    const d = Object.fromEntries(new FormData(e.target));
+    try { const s = await api("/api/setup", {method: "POST", body: JSON.stringify(d)});
+      $("#hospital-name").textContent = s.hospital_name || "My Hospital"; document.title = (s.hospital_name || "My Hospital") + " · Bed Manager";
+      toast("Saved."); loadSetup();
+    } catch (err) { toast(err.message); }
+  };
+  $("#ward-form").onsubmit = async e => { e.preventDefault();
+    const d = Object.fromEntries(new FormData(e.target)); d.beds = +d.beds;
+    try { await api("/api/wards", {method: "POST", body: JSON.stringify(d)}); e.target.reset(); toast(`Ward ${d.name} added.`); loadSetup(); refreshWardSelects(); }
+    catch (err) { toast(err.message); }
+  };
+  $("#wipe").onclick = async () => {
+    if (prompt('This erases every ward, bed and patient in this hospital. Type DELETE to confirm.') !== "DELETE") return;
+    await api("/api/setup/wipe", {method: "POST", body: JSON.stringify({confirm: "DELETE"})});
+    toast("Hospital erased."); $("#hospital-name").textContent = "My Hospital"; loadSetup(); refreshWardSelects();
+  };
+}
 
 // ---------- model report ----------
 function card(title, rows, note) {
@@ -357,11 +511,17 @@ async function loadReport() {
 }
 
 // ---------- header ----------
-$("#next-day").onclick = async () => { const r = await api("/api/simulate/next-day", {method: "POST"});
-  toast(`${fmtDate(r.today)}: ${r.discharged} discharged, ${r.arrivals} new on the list, ${r.admitted} admitted.`); refresh(); if (current !== "overview") loadOverview(); };
-$("#reset").onclick = async () => { await api("/api/simulate/reset", {method: "POST"}); toast("Demo reset."); refresh(); if (current !== "overview") loadOverview(); };
+if (!LIVE) {
+  $("#next-day").onclick = async () => { const r = await api("/api/simulate/next-day", {method: "POST"});
+    toast(`${fmtDate(r.today)}: ${r.discharged} discharged, ${r.arrivals} new on the list, ${r.admitted} admitted.`); refresh(); if (current !== "overview") loadOverview(); };
+  $("#reset").onclick = async () => { await api("/api/simulate/reset", {method: "POST"}); toast("Demo reset."); refresh(); if (current !== "overview") loadOverview(); };
+}
 
-loadOverview();
+// A brand-new hospital opens on Setup; otherwise on the overview.
+(async () => {
+  if (LIVE && !(await api("/api/wards")).length) { showTab("setup"); loadOverview(); }
+  else loadOverview();
+})();
 </script>
 </body>
 </html>

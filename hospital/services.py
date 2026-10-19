@@ -6,8 +6,26 @@ from datetime import date, timedelta
 from . import db, models
 
 
+def is_live(con):
+    """A real hospital runs on the calendar date; the demo runs on its own simulated clock."""
+    return db.get_settings(con).get("clock") == "real"
+
+
 def today(con):
-    return date.fromisoformat(db.get_settings(con)["today"])
+    s = db.get_settings(con)
+    if s.get("clock") == "real":
+        return date.today()
+    return date.fromisoformat(s["today"])
+
+
+def _log(con, field, on):
+    """Count today's arrivals, admissions and discharges for a real hospital (feeds the admissions forecast)."""
+    if not is_live(con) or on != today(con):
+        return
+    d = on.isoformat()
+    con.execute("INSERT OR IGNORE INTO daily_log VALUES (?, 0, 0, 0, 0)", (d,))
+    con.execute(f"UPDATE daily_log SET {field} = {field} + 1, "
+                "occupied = (SELECT COUNT(*) FROM beds WHERE patient_id IS NOT NULL) WHERE day = ?", (d,))
 
 
 # ---------- waiting list ----------
@@ -46,6 +64,7 @@ def add_patient(con, data, sim_true_los=None):
         (data["name"], data.get("age"), data.get("gender"), source, data.get("ward"), data.get("condition"),
          json.dumps(clinical), int(data.get("urgency", 1)), admit_prob,
          data.get("added_on") or today(con).isoformat(), sim_true_los))
+    _log(con, "arrivals", date.fromisoformat(data.get("added_on") or today(con).isoformat()))
     return cur.lastrowid
 
 
@@ -75,6 +94,7 @@ def admit(con, patient_id, bed_id=None, on=None):
     con.execute("UPDATE patients SET status = 'admitted', admitted_on = ?, los_p50 = ?, los_p90 = ? WHERE id = ?",
                 (on.isoformat(), p50, p90, patient_id))
     con.execute("UPDATE beds SET patient_id = ? WHERE id = ?", (patient_id, bed_id))
+    _log(con, "admissions", on)
     return {"bed_id": bed_id, "los_p50": p50, "los_p90": p90}
 
 
@@ -85,6 +105,75 @@ def discharge(con, bed_id, on=None):
     on = on or today(con)
     con.execute("UPDATE patients SET status = 'discharged', discharged_on = ? WHERE id = ?", (on.isoformat(), r["patient_id"]))
     con.execute("UPDATE beds SET patient_id = NULL WHERE id = ?", (bed_id,))
+    _log(con, "discharges", on)
+
+
+# ---------- hospital setup (real hospital only) ----------
+
+def wards(con):
+    return [dict(r) for r in con.execute(
+        "SELECT wards.id, wards.name, COUNT(beds.id) AS beds, COUNT(beds.patient_id) AS occupied "
+        "FROM wards LEFT JOIN beds ON beds.ward_id = wards.id GROUP BY wards.id ORDER BY wards.id")]
+
+
+def add_beds(con, ward_id, count, prefix=None):
+    w = con.execute("SELECT name FROM wards WHERE id = ?", (ward_id,)).fetchone()
+    if w is None:
+        raise ValueError("ward not found")
+    if not 1 <= count <= 500:
+        raise ValueError("number of beds must be between 1 and 500")
+    prefix = (prefix or "".join(x[0] for x in w["name"].split()).upper() or "B").strip()
+    taken = {r["label"] for r in con.execute("SELECT label FROM beds WHERE ward_id = ?", (ward_id,))}
+    i = added = 0
+    while added < count:
+        i += 1
+        label = f"{prefix}-{i:02d}"
+        if label not in taken:
+            con.execute("INSERT INTO beds (ward_id, label) VALUES (?, ?)", (ward_id, label))
+            added += 1
+
+
+def add_ward(con, name, beds, prefix=None):
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("ward name is required")
+    if con.execute("SELECT 1 FROM wards WHERE lower(name) = lower(?)", (name,)).fetchone():
+        raise ValueError("a ward with that name already exists")
+    wid = con.execute("INSERT INTO wards (name, kind) VALUES (?, 'general')", (name,)).lastrowid
+    if beds:
+        add_beds(con, wid, beds, prefix)
+    return wid
+
+
+def delete_ward(con, ward_id):
+    if con.execute("SELECT 1 FROM beds WHERE ward_id = ? AND patient_id IS NOT NULL", (ward_id,)).fetchone():
+        raise ValueError("discharge the patients in this ward first")
+    con.execute("DELETE FROM beds WHERE ward_id = ?", (ward_id,))
+    con.execute("DELETE FROM wards WHERE id = ?", (ward_id,))
+
+
+def delete_bed(con, bed_id):
+    r = con.execute("SELECT patient_id FROM beds WHERE id = ?", (bed_id,)).fetchone()
+    if r is None:
+        raise ValueError("bed not found")
+    if r["patient_id"] is not None:
+        raise ValueError("discharge the patient first")
+    con.execute("DELETE FROM beds WHERE id = ?", (bed_id,))
+
+
+def register_inpatient(con, bed_id, data):
+    """Put a patient who is already in a bed onto the board, with the date they were admitted."""
+    r = con.execute("SELECT beds.patient_id, wards.name AS ward FROM beds JOIN wards ON wards.id = beds.ward_id "
+                    "WHERE beds.id = ?", (bed_id,)).fetchone()
+    if r is None:
+        raise ValueError("bed not found")
+    if r["patient_id"] is not None:
+        raise ValueError("bed is occupied")
+    admitted_on = date.fromisoformat(data.get("admitted_on") or today(con).isoformat())
+    if admitted_on > today(con):
+        raise ValueError("admission date cannot be in the future")
+    pid = add_patient(con, {**data, "ward": r["ward"], "added_on": admitted_on.isoformat()})
+    return admit(con, pid, bed_id, on=admitted_on)
 
 
 # ---------- beds and overview ----------
@@ -114,6 +203,14 @@ def beds(con):
 
 
 def recent_daily_admissions(con, days=14):
+    s = db.get_settings(con)
+    if s.get("clock") == "real":
+        on = today(con)
+        if (on - date.fromisoformat(s.get("created_on", on.isoformat()))).days < days:
+            return float(s.get("typical_daily_admissions") or 6)  # not enough history yet: use the setup figure
+        total = con.execute("SELECT COALESCE(SUM(arrivals), 0) FROM daily_log WHERE day >= ? AND day < ?",
+                            ((on - timedelta(days=days)).isoformat(), on.isoformat())).fetchone()[0]
+        return total / days
     rows = con.execute("SELECT admissions, arrivals FROM daily_log ORDER BY day DESC LIMIT ?", (days,)).fetchall()
     if not rows:
         return 6.0

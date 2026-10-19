@@ -1,0 +1,3 @@
+* text=auto
+# LightGBM model files must keep LF line endings or they fail to load on Windows
+models/*.txt -text
