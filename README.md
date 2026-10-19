@@ -60,6 +60,8 @@ Open **http://localhost:5000**. The first run creates a demo hospital in `data/h
 
 It runs on the real calendar date, so there is no *Next day* or *Reset demo*. *Erase this hospital* on the Setup tab wipes it and starts again.
 
+**Online database (Supabase / PostgreSQL).** To keep your hospital in a Postgres database instead of the local file, copy `.env.example` to `.env` and set `DATABASE_URL` to the connection string (in Supabase: *Connect → Connection string → URI → Session pooler*, with your database password filled in). On start the app creates its tables in a `bed_manager` schema, with row level security switched on, so Supabase's public REST API cannot read patient data. `.env` is in `.gitignore`; never commit it. The demo always stays in the local SQLite file.
+
 ## Train the models
 
 The trained triage model is already in `models/`, so the app works without retraining.

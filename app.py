@@ -2,16 +2,19 @@
 
 Two separate platforms run from one server, each with its own database:
   http://localhost:5000/           demo hospital, pre-filled, simulated clock (data/hospital.db)
-  http://localhost:5000/hospital/  your own hospital, empty until you set it up (data/my_hospital.db)
+  http://localhost:5000/hospital/  your own hospital, empty until you set it up
+                                   (PostgreSQL if DATABASE_URL is set in .env, else data/my_hospital.db)
 
 Run:  python app.py
 """
 from datetime import date
-from pathlib import Path
 
+from dotenv import load_dotenv
 from flask import Blueprint, Flask, jsonify, render_template, request
 
-from hospital import db, models, services
+load_dotenv()
+
+from hospital import db, models, services  # noqa: E402  (after load_dotenv so DATABASE_URL is visible)
 from hospital.seed_demo import seed
 
 
@@ -26,14 +29,18 @@ def init_live(con):
         con.execute("INSERT OR IGNORE INTO settings VALUES (?, ?)", (k, v))
 
 
-def platform(name, prefix, db_path: Path, live: bool):
-    """All pages and API routes for one hospital, stored in its own SQLite file."""
+def platform(name, prefix, target, live: bool):
+    """All pages and API routes for one hospital, stored in its own database (SQLite file or Postgres URL)."""
     bp = Blueprint(name, __name__, url_prefix=prefix or None)
-    session = lambda: db.session(db_path)
+    session = lambda: db.session(target)
 
-    if not db_path.exists():
+    if live:  # idempotent: creates missing tables and settings, keeps existing data
         with session() as con:
-            init_live(con) if live else seed(con)
+            init_live(con)
+    elif not target.exists():
+        with session() as con:
+            seed(con)
+    print(f" * {name}: {db.describe(target)}")
 
     @bp.get("/")
     def index():
@@ -230,7 +237,7 @@ def platform(name, prefix, db_path: Path, live: bool):
 app = Flask(__name__)
 app.json.sort_keys = False
 app.register_blueprint(platform("demo", "", db.DB_PATH, live=False))
-app.register_blueprint(platform("hospital", "/hospital", db.LIVE_DB_PATH, live=True))
+app.register_blueprint(platform("hospital", "/hospital", db.live_target(), live=True))
 
 
 if __name__ == "__main__":

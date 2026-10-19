@@ -6,3 +6,5 @@ flask>=3.0
 flask-cors
 lightgbm>=4.0
 holidays
+psycopg[binary]>=3.2
+python-dotenv>=1.0
